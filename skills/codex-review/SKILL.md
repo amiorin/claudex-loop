@@ -1,11 +1,11 @@
 ---
 name: codex-review
-description: 'A standalone adversarial PLAN-review loop where Claude Code (builder) and OpenAI Codex (read-only critic) tag-team an implementation plan before any code is written. Use this when you ALREADY have a plan or a clear idea and just want the cross-model stress-test — no requirements interview first. Claude drafts/loads the plan into PLAN.md, Codex reviews it in a read-only sandbox and returns VERDICT:APPROVED or VERDICT:REVISE, Claude revises and re-submits to the SAME Codex session (context preserved) until APPROVED or a configurable MAX_ROUNDS cap is hit. Human approves the converged plan before code. Use when the user says "/codex-review", "codex review my plan", "have Codex review my plan", "argue this plan with Codex", "adversarial plan review", "make Claude and Codex argue/fight over the plan", or is about to build something high-stakes (auth, schema, concurrency, migrations, payments) and wants a second-model sanity check on the PLAN before implementation. For a guided requirements interview BEFORE the review, use /grill-me-codex instead. NOT for reviewing already-written CODE (that is the Codex plugin''s /codex:review) and NOT for trivial changes.'
+description: 'A standalone adversarial PLAN-review loop where Claude Code (builder) and OpenAI Codex (non-writing critic) tag-team an implementation plan before any code is written. Use this when you ALREADY have a plan or a clear idea and just want the cross-model stress-test — no requirements interview first. Claude drafts/loads the plan into PLAN.md, Codex reviews it and returns VERDICT:APPROVED or VERDICT:REVISE, Claude revises and re-submits to the SAME Codex session (context preserved) until APPROVED or a configurable MAX_ROUNDS cap is hit. Human approves the converged plan before code. Use when the user says "/codex-review", "codex review my plan", "have Codex review my plan", "argue this plan with Codex", "adversarial plan review", "make Claude and Codex argue/fight over the plan", or is about to build something high-stakes (auth, schema, concurrency, migrations, payments) and wants a second-model sanity check on the PLAN before implementation. For a guided requirements interview BEFORE the review, use /grill-me-codex instead. NOT for reviewing already-written CODE (that is the Codex plugin''s /codex:review) and NOT for trivial changes.'
 ---
 
 # Codex-Review — Adversarial Plan-Review Loop
 
-Two models, one plan, a bounded argument. **Claude is the builder and orchestrator. Codex is a read-only critic** that can read the repo and the plan but cannot touch a single file. They communicate strictly through `PLAN.md` + a Codex session that persists across rounds. The human enters at exactly two points: kickoff and final sign-off.
+Two models, one plan, a bounded argument. **Claude is the builder and orchestrator. Codex is the critic** — it reads the repo and the plan and is instructed to critique without touching a file (it runs unsandboxed; this machine is the sandbox). They communicate strictly through `PLAN.md` + a Codex session that persists across rounds. The human enters at exactly two points: kickoff and final sign-off.
 
 This is a **deliberate, high-stakes tool** — reach for it on auth, data models, concurrency, migrations, payments, anything expensive to get wrong. Skip it for obvious/cheap work.
 
@@ -13,9 +13,9 @@ This is a **deliberate, high-stakes tool** — reach for it on auth, data models
 
 - Codex CLI installed and recent: `codex --version` (need ≥ 0.130; the default `gpt-5.5` model errors on older CLIs).
 - Codex authenticated: a prior `codex login` (ChatGPT account is fine). If a run returns an auth/model error, surface it to the user — do not silently retry.
-- Do NOT pin `-m` unless the user asks. The user's `~/.codex/config.toml` default model is used. Pinning `gpt-5.x-codex` variants fails on ChatGPT-account auth.
-- **Echo the active model before Round 1** so the user can confirm: read the `model` line from `~/.codex/config.toml` (absent = "CLI default"); state it with the resolved tunables. If the user objects, stop before burning a round.
-- **Sandbox flag differs between the two commands.** `codex exec` accepts `-s read-only`. `codex exec resume` does NOT — it rejects `-s` ("unexpected argument"). On resume you MUST force read-only via `-c sandbox_mode="read-only"`, because `config.toml` may default `sandbox_mode` to `danger-full-access` (+ `approval_policy="never"`) — which would let Codex WRITE files mid-loop. This is the single most important safety detail in this skill: verified end-to-end on 2026-06-04.
+- Model is pinned on every call: `--model gpt-5.6-sol -c service_tier=fast`. (`gpt-5.x-codex` variants still fail on ChatGPT-account auth; `gpt-5.6-sol` does not — verified end-to-end, exec + resume, on codex-cli 0.147.0, 2026-08-26.)
+- **Echo the active model before Round 1** so the user can confirm — `gpt-5.6-sol (service_tier=fast, pinned by the skill)` plus the CLI version; state it with the resolved tunables. If the user objects, stop before burning a round.
+- **Codex runs unsandboxed** — `--dangerously-bypass-approvals-and-sandbox` on both `codex exec` and `codex exec resume`, on the premise that the host machine is itself the sandbox. `resume` rejects `-s` ("unexpected argument") but accepts the bypass and `--model` flags, so spell the full set out every round instead of letting it inherit `config.toml`. Consequence worth naming: the read-only discipline is a *prompt* constraint, not a kernel one — keep `Do NOT modify any files` in the review prompt, and if a round looks suspicious, check `git status` before trusting the verdict.
 
 ## Tunable variables (read from skill args, else default)
 
@@ -71,12 +71,13 @@ Maintain `ROUND` (start 1) and `THREAD_ID` (empty until round 1 returns).
 
 **The review prompt** sent to Codex each round (adjust the task line):
 
-> You are an adversarial reviewer for an implementation plan. Be skeptical and specific — your job is to find what breaks, not to be agreeable. Read the plan at `PLAN.md` (and any repo files you need; you are read-only). Identify concrete flaws: security holes, race conditions, missing edge cases, schema conflicts, wrong assumptions, observability gaps, simpler alternatives. For each, give a one-line fix. Do NOT modify any files. End your reply with EXACTLY one line: `VERDICT: APPROVED` if the plan is sound enough to implement, or `VERDICT: REVISE` if it still has material problems.
+> You are an adversarial reviewer for an implementation plan. Be skeptical and specific — your job is to find what breaks, not to be agreeable. Read the plan at `PLAN.md` (and any repo files you need — read them, never write). Identify concrete flaws: security holes, race conditions, missing edge cases, schema conflicts, wrong assumptions, observability gaps, simpler alternatives. For each, give a one-line fix. Do NOT modify any files. End your reply with EXACTLY one line: `VERDICT: APPROVED` if the plan is sound enough to implement, or `VERDICT: REVISE` if it still has material problems.
 
 **Round 1** (creates the session — capture `thread_id`):
 
 ```bash
-codex exec -s read-only --json \
+codex exec --dangerously-bypass-approvals-and-sandbox --model gpt-5.6-sol -c service_tier=fast \
+  --json \
   -o /tmp/codex-verdict.txt \
   "$(cat REVIEW_PROMPT)" \
   < /dev/null 2>/dev/null | grep '"type":"thread.started"'
@@ -92,9 +93,10 @@ Parse `thread_id` from the `{"type":"thread.started","thread_id":"..."}` line �
 **Rounds 2..MAX** (resume the SAME session — Codex remembers its earlier critiques, won't re-litigate settled points):
 
 ```bash
-# NOTE: resume rejects -s. Force read-only via -c sandbox_mode, or Codex
-# inherits config.toml (possibly danger-full-access) and could write files.
-codex exec resume "$THREAD_ID" -c sandbox_mode="read-only" --json \
+# NOTE: resume rejects -s but takes the same bypass/model flags as exec.
+# Spell them out every round — otherwise Codex inherits config.toml.
+codex exec resume "$THREAD_ID" --dangerously-bypass-approvals-and-sandbox \
+  --model gpt-5.6-sol -c service_tier=fast --json \
   -o /tmp/codex-verdict.txt \
   "I revised the plan. Re-review PLAN.md. Same rules. End with VERDICT: APPROVED or VERDICT: REVISE." \
   < /dev/null 2>/dev/null >/dev/null
@@ -117,7 +119,7 @@ Both `codex exec` and `codex exec resume` support `--json` (stream → parse `th
 
 ## Hard rules
 
-- Codex is read-only EVERY round — `-s read-only` for the first call, `-c sandbox_mode="read-only"` for every resume (resume has no `-s`). It never writes. If you're tempted to give it write access, stop — that's a different skill.
+- Same flag set EVERY round — `--dangerously-bypass-approvals-and-sandbox --model gpt-5.6-sol -c service_tier=fast`, first call and every resume (resume has no `-s`). Codex is unsandboxed, so "don't write" lives in the review prompt: keep it there. This skill still never *asks* Codex to implement — that's `/codex-build`.
 - The loop ALWAYS terminates at `MAX_ROUNDS`. No unbounded recursion.
 - Claude is the final arbiter on every REVISE — incorporate good critiques, reject bad ones *with a reason logged*. Don't cave to Codex on everything (that defeats the cross-model check) and don't ignore it (that defeats the point).
 - Code only after human gate #2.

@@ -1,6 +1,6 @@
 ---
 name: claudex-loop
-description: 'Four-phase plan hardening (renamed from /crucible 2026-08-16; old triggers still work) — supersedes /grill-me-codex and /grill-with-docs-codex. PHASE 0 RECON — Claude scouts first (codebase + docs on brownfield; prior art, stack, and pitfalls research on greenfield) and drafts an assumptions ledger. PHASE 1 INTERROGATE — confirm the ledger in one batch, then question only the load-bearing decisions one at a time (each with why-it-matters, a recommendation, and what-breaks-if-we-guess-wrong), cosmetic ones batched, with a visible decision map and an accept-all-recommendations escape hatch. PHASE 2 REVIEW — the locked plan goes to PLAN.md and OpenAI Codex adversarially reviews it in a read-only sandbox (VERDICT: APPROVED/REVISE); Claude revises and re-submits to the SAME Codex session until APPROVED or MAX_ROUNDS, then you sign off before any code. PHASE 3 BUILD (optional) — you pick the builder and the models swap jobs: Codex builds via codex-build and Claude reads the full diff + runs the proof itself; Claude builds and a fresh read-only Codex session cross-inspects the diff (on by default, logged opt-out only); either way you approve the final diff. Use when the user says "/claudex-loop", "claudex this", "run the claudex loop", "/crucible" (legacy), "put this through the crucible", "crucible this plan", "grill me then have codex review", "stress-test this plan before we build", or is about to build something high-stakes (auth, schema, concurrency, migrations, payments, greenfield architecture) and wants alignment AND a cross-model sanity check first. Locked plan needing only the Codex loop → /codex-review. Reviewing already-written code → /codex:review. NOT for trivial changes.'
+description: 'Four-phase plan hardening (renamed from /crucible 2026-08-16; old triggers still work) — supersedes /grill-me-codex and /grill-with-docs-codex. PHASE 0 RECON — Claude scouts first (codebase + docs on brownfield; prior art, stack, and pitfalls research on greenfield) and drafts an assumptions ledger. PHASE 1 INTERROGATE — confirm the ledger in one batch, then question only the load-bearing decisions one at a time (each with why-it-matters, a recommendation, and what-breaks-if-we-guess-wrong), cosmetic ones batched, with a visible decision map and an accept-all-recommendations escape hatch. PHASE 2 REVIEW — the locked plan goes to PLAN.md and OpenAI Codex adversarially reviews it (VERDICT: APPROVED/REVISE); Claude revises and re-submits to the SAME Codex session until APPROVED or MAX_ROUNDS, then you sign off before any code. PHASE 3 BUILD (optional) — you pick the builder and the models swap jobs: Codex builds via codex-build and Claude reads the full diff + runs the proof itself; Claude builds and a fresh Codex session cross-inspects the diff (on by default, logged opt-out only); either way you approve the final diff. Use when the user says "/claudex-loop", "claudex this", "run the claudex loop", "/crucible" (legacy), "put this through the crucible", "crucible this plan", "grill me then have codex review", "stress-test this plan before we build", or is about to build something high-stakes (auth, schema, concurrency, migrations, payments, greenfield architecture) and wants alignment AND a cross-model sanity check first. Locked plan needing only the Codex loop → /codex-review. Reviewing already-written code → /codex:review. NOT for trivial changes.'
 ---
 
 # Claudex-Loop — Recon, Interrogate, Review, Build
@@ -14,7 +14,7 @@ Four phases, four failure modes killed:
 - **Phase 2 — REVIEW** kills *a plan that sounds right but breaks*: a different model (Codex) attacks the locked plan. Cross-model = no echo chamber.
 - **Phase 3 — BUILD** *(optional)* kills *grading your own work*: one model implements the locked plan, the rival model grades the diff — in both directions.
 
-You enter at four points only: confirming the assumptions ledger, answering the fire, signing off the converged plan, and approving the final diff if you build. Codex is read-only throughout recon, interrogation, and review — **no code is written until you sign off the converged plan.**
+You enter at four points only: confirming the assumptions ledger, answering the fire, signing off the converged plan, and approving the final diff if you build. Codex runs unsandboxed (this machine *is* the sandbox) and is instructed to review without writing — **no code is written until you sign off the converged plan.**
 
 ---
 
@@ -160,8 +160,8 @@ Hand the locked plan to Codex for adversarial review. Mechanics verified end-to-
 ### Prerequisites (verify once, fast)
 - `codex --version` ≥ 0.130 (older CLIs error on the default `gpt-5.5` model).
 - Codex authenticated (prior `codex login`; ChatGPT account is fine). On auth/model error, surface it — don't silently retry.
-- Do NOT pin `-m`. Use the config default. Pinning `gpt-5.x-codex` variants 400s on ChatGPT-account auth.
-- **Echo the active model before Round 1** so the user can confirm: read the `model` line from `~/.codex/config.toml` (if absent, report "CLI default"). State it alongside the resolved tunables, e.g. `Reviewer model: CLI default (config unpinned) — codex-cli 0.137.0`. If the user objects, stop and let them adjust config before burning a review round.
+- Model is pinned on every call: `--model gpt-5.6-sol -c service_tier=fast`. (`gpt-5.x-codex` variants still 400 on ChatGPT-account auth; `gpt-5.6-sol` does not — verified end-to-end, exec + resume, on codex-cli 0.147.0, 2026-08-26.)
+- **Echo the active model before Round 1** so the user can confirm, alongside the resolved tunables, e.g. `Reviewer model: gpt-5.6-sol (service_tier=fast, pinned by the skill) — codex-cli 0.147.0`. If the user objects, stop and let them override before burning a review round.
 
 ### Tunables (read from args, else default)
 | Var | Default | Meaning |
@@ -170,29 +170,31 @@ Hand the locked plan to Codex for adversarial review. Mechanics verified end-to-
 | `PLAN_FILE` | `PLAN.md` | The plan Phase 1 produced. |
 | `LOG_FILE` | `PLAN-REVIEW-LOG.md` | Append-only argument transcript. The artifact. |
 | `research` | ask | `none` / `web` / `deep` — pre-answers the Phase 0 research gate. `deep` = the deep-research dynamic workflow (prompt still shown for sign-off first). |
-| `inspect` | `on` | Post-build cross-inspection of Claude-built code by a fresh read-only Codex session. `off` = skip (logged as an explicit opt-out, never silently). |
+| `inspect` | `on` | Post-build cross-inspection of Claude-built code by a fresh Codex session. `off` = skip (logged as an explicit opt-out, never silently). |
 | `MAX_INSPECTION_ROUNDS` | `2` | Initial post-build review + one reinspection after accepted fixes. |
 
 If invoked with e.g. `rounds=3`, use that for `MAX_ROUNDS`. Echo resolved values before starting.
 
 ### The review prompt (sent each round)
-> You are an adversarial reviewer for an implementation plan. Be skeptical and specific — your job is to find what breaks, not to be agreeable. Read the plan at `PLAN.md` (and `CONTEXT.md`/ADRs for domain language, if present) and any repo files you need (you are read-only). Identify concrete flaws: security holes, race conditions, missing edge cases, schema conflicts, wrong assumptions, observability gaps, simpler alternatives. For each, give a one-line fix. Do NOT modify any files. End your reply with EXACTLY one line: `VERDICT: APPROVED` if the plan is sound enough to implement, or `VERDICT: REVISE` if it still has material problems.
+> You are an adversarial reviewer for an implementation plan. Be skeptical and specific — your job is to find what breaks, not to be agreeable. Read the plan at `PLAN.md` (and `CONTEXT.md`/ADRs for domain language, if present) and any repo files you need (read them, never write). Identify concrete flaws: security holes, race conditions, missing edge cases, schema conflicts, wrong assumptions, observability gaps, simpler alternatives. For each, give a one-line fix. Do NOT modify any files. End your reply with EXACTLY one line: `VERDICT: APPROVED` if the plan is sound enough to implement, or `VERDICT: REVISE` if it still has material problems.
 
 (On greenfield there are no repo files — Codex reviews `PLAN.md` and its `## Assumptions` section on their own merits; the assumption sources give it something concrete to attack.)
 
 ### Round 1 — fresh session (capture `thread_id`)
 ```bash
-codex exec -s read-only --json -o /tmp/codex-verdict.txt "$(cat REVIEW_PROMPT)" \
+codex exec --dangerously-bypass-approvals-and-sandbox --model gpt-5.6-sol -c service_tier=fast \
+  --json -o /tmp/codex-verdict.txt "$(cat REVIEW_PROMPT)" \
   < /dev/null 2>/dev/null | grep '"type":"thread.started"'
 ```
 Parse `thread_id` from the `{"type":"thread.started","thread_id":"..."}` line → that's `THREAD_ID`. The critique is in `/tmp/codex-verdict.txt`. Confirm success by the verdict file + a `thread.started` line; if neither appears, the run failed (auth/model) — stop and tell the user. `2>/dev/null` suppresses cosmetic MCP/auth stderr noise. **`< /dev/null` is mandatory:** `codex exec` reads stdin *in addition to* the prompt arg, so under a non-interactive driver (Claude Code's Bash tool, CI, any non-TTY pipeline) it blocks forever waiting on stdin EOF — a silent ~0% CPU hang. The redirect gives it immediate EOF.
 
 ### Rounds 2..MAX — resume the SAME session (Codex remembers its prior critiques)
 ```bash
-# resume REJECTS -s. Force read-only via -c sandbox_mode, or Codex inherits
-# config.toml (possibly danger-full-access) and could WRITE files. This is the
-# single most important safety line in the skill — verified 2026-06-04.
-codex exec resume "$THREAD_ID" -c sandbox_mode="read-only" --json \
+# resume REJECTS -s, but takes the same bypass/model flags as exec. Spell the
+# full set out every round — otherwise Codex silently inherits config.toml's
+# sandbox and model instead of the ones this skill pins.
+codex exec resume "$THREAD_ID" --dangerously-bypass-approvals-and-sandbox \
+  --model gpt-5.6-sol -c service_tier=fast --json \
   -o /tmp/codex-verdict.txt \
   "I revised the plan. Re-review PLAN.md — check whether your prior findings are addressed and flag anything new. End with VERDICT: APPROVED or VERDICT: REVISE." \
   < /dev/null 2>/dev/null >/dev/null
@@ -220,7 +222,7 @@ If the user picks Codex: invoke the `codex-build` skill with `SPEC_FILE=PLAN.md`
 
 The doctrine is *whoever made the thing never checks the thing* — that applies to Claude's code too. After Claude implements and the proof gates pass:
 
-1. Launch a **fresh read-only Codex session** (`codex exec -s read-only`, NEW thread — not the Phase 2 thread; the reviewer should see the code cold, not through its own plan critiques). Give it: `PLAN.md`, the base commit, and the code diff. Ask for PR-style findings — correctness, spec fidelity, edge cases, nothing outside scope — no verdict line needed; this is advisory review, not a gate loop.
+1. Launch a **fresh Codex session** (`codex exec` with the standard flag set, NEW thread — not the Phase 2 thread; the reviewer should see the code cold, not through its own plan critiques). Give it: `PLAN.md`, the base commit, and the code diff. Ask for PR-style findings — correctness, spec fidelity, edge cases, nothing outside scope — no verdict line needed; this is advisory review, not a gate loop.
 2. Claude arbitrates each finding: accept (fix it, rerun affected tests) or reject *with a logged reason*. Cap at `MAX_INSPECTION_ROUNDS=2` (initial review + one reinspection after accepted fixes).
 3. Append to `LOG_FILE` under `## Post-build inspection`: findings verbatim, Claude's dispositions, rounds used. Present the summary alongside the final diff at the human gate.
 
@@ -231,7 +233,7 @@ Opt-out: `inspect=off` at invocation or the user declining at Resolution. Skippi
 ## Hard rules
 - Phases run in order: 0 → 1 → 2. Don't write `PLAN.md` until the interrogation has actually resolved the decision map with the user (or they invoked the escape hatch).
 - The assumptions ledger is presented ONCE as a batch — never drip assumptions as individual questions.
-- Codex is read-only EVERY round — `-s read-only` first call, `-c sandbox_mode="read-only"` on every resume (resume has no `-s`). It never writes.
+- Same flag set EVERY round — `--dangerously-bypass-approvals-and-sandbox --model gpt-5.6-sol -c service_tier=fast`, first call and every resume (resume has no `-s`). Codex is unsandboxed, so "don't write" is a *prompt* constraint now: keep `Do NOT modify any files` in the review prompt, and check `git status` if a round looks off.
 - The loop ALWAYS terminates at `MAX_ROUNDS`.
 - Claude is final arbiter on every REVISE — incorporate good critiques, reject bad ones *with a logged reason*. Don't cave to everything (defeats the cross-model check) and don't ignore it (defeats the point).
 - Code only after the user's final sign-off.

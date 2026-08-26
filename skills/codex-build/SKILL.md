@@ -1,11 +1,11 @@
 ---
 name: codex-build
-description: 'Hand a frozen spec (PLAN.md or any locked plan) to OpenAI Codex to IMPLEMENT with full write access, while Claude stays the spec-writer and reviewer — the exact role-flip of /codex-review. Codex builds from the spec in a --yolo sandbox, Claude reads the full diff like a contributor PR, runs the proof test, and iterates fixes via the SAME Codex session up to MAX_FIX_ROUNDS before taking over. Human approves the diff before any commit. Use when the user says "/codex-build", "have codex build this", "codex implement the plan", "hand the plan to codex", "delegate the build to codex", or right after a plan survives /grill-me-codex, /grill-with-docs-codex, or /codex-review and they choose Codex for implementation (Act 3). Also for standalone delegation: refactors, mechanical migrations, bug fixes with a known repro, test/coverage writing — anything that reads as a work order. NOT for tiny edits (~<20 lines — delegation overhead loses), NOT for design work (if writing the spec forces decisions, that''s /grill-me-codex first), NOT for reviewing existing code (/codex:review), and NOT for anything needing Claude-session tools (MCP, secrets, browser).'
+description: 'Hand a frozen spec (PLAN.md or any locked plan) to OpenAI Codex to IMPLEMENT with full write access, while Claude stays the spec-writer and reviewer — the exact role-flip of /codex-review. Codex builds from the spec in an unsandboxed session, Claude reads the full diff like a contributor PR, runs the proof test, and iterates fixes via the SAME Codex session up to MAX_FIX_ROUNDS before taking over. Human approves the diff before any commit. Use when the user says "/codex-build", "have codex build this", "codex implement the plan", "hand the plan to codex", "delegate the build to codex", or right after a plan survives /grill-me-codex, /grill-with-docs-codex, or /codex-review and they choose Codex for implementation (Act 3). Also for standalone delegation: refactors, mechanical migrations, bug fixes with a known repro, test/coverage writing — anything that reads as a work order. NOT for tiny edits (~<20 lines — delegation overhead loses), NOT for design work (if writing the spec forces decisions, that''s /grill-me-codex first), NOT for reviewing existing code (/codex:review), and NOT for anything needing Claude-session tools (MCP, secrets, browser).'
 ---
 
 # Codex-Build — Codex Types, Claude Verifies
 
-The role-flip of `/codex-review`: there, Claude builds the plan and Codex critiques read-only. Here, **Codex is the builder with write access; Claude is the spec-writer and reviewer.** Codex implements a frozen spec end-to-end; Claude judges the diff like a contributor PR, demands proof, and iterates fixes in the same Codex session. The human enters at exactly two points: kickoff and diff sign-off.
+The role-flip of `/codex-review`: there, Claude builds the plan and Codex critiques without writing. Here, **Codex is the builder with write access; Claude is the spec-writer and reviewer.** Codex implements a frozen spec end-to-end; Claude judges the diff like a contributor PR, demands proof, and iterates fixes in the same Codex session. The human enters at exactly two points: kickoff and diff sign-off.
 
 Adapted from Peter Steinberger's `codex-first` pattern (agent-scripts), rebuilt on this house's verified Codex mechanics.
 
@@ -15,8 +15,8 @@ Adapted from Peter Steinberger's `codex-first` pattern (agent-scripts), rebuilt 
 
 - `codex --version` ≥ 0.130 (older CLIs error on the default `gpt-5.5` model).
 - Codex authenticated (prior `codex login`; ChatGPT account is fine). On auth/model error, surface it — don't silently retry.
-- Do NOT pin `-m` or model config (e.g. `model_reasoning_effort`) unless the user asks. Pinning `gpt-5.x-codex` variants 400s on ChatGPT-account auth; config defaults come from `~/.codex/config.toml`.
-- **Echo the active model at kickoff** so the user can confirm: read the `model` line from `~/.codex/config.toml` (absent = "CLI default"); state it with the resolved tunables. If the user objects, stop before launching the build.
+- Model is pinned on every call: `--model gpt-5.6-sol -c service_tier=fast`. (`gpt-5.x-codex` variants still 400 on ChatGPT-account auth; `gpt-5.6-sol` does not — verified end-to-end, exec + resume, on codex-cli 0.147.0, 2026-08-26.) Leave other model config (e.g. `model_reasoning_effort`) to `~/.codex/config.toml` unless the user asks.
+- **Echo the active model at kickoff** so the user can confirm — `gpt-5.6-sol (service_tier=fast, pinned by the skill)` plus the CLI version; state it with the resolved tunables. If the user objects, stop before launching the build.
 - **Codex has a native image-generation tool** in `codex exec` sessions (ChatGPT-account backed, no API key; verified 2026-07-08 — it saved a generated PNG to disk headless). Specs may therefore include "generate these image assets yourself" steps: name exact file paths, dimensions, and style in the prompt contract.
 - Run from the target repo's root (both `exec` and `resume` then need no `-C`; `resume` doesn't support `-C` anyway).
 
@@ -60,7 +60,8 @@ EOF
 ## Step 2 — Launch Codex (fresh session, capture `thread_id`)
 
 ```bash
-codex exec --yolo --json -o /tmp/codex-build.txt - <"$P" 2>/dev/null | grep '"type":"thread.started"'
+codex exec --dangerously-bypass-approvals-and-sandbox --model gpt-5.6-sol -c service_tier=fast \
+  --json -o /tmp/codex-build.txt - <"$P" 2>/dev/null | grep '"type":"thread.started"'
 ```
 
 - Prompt goes via stdin (`- <"$P"`) — this both avoids quoting bugs AND sidesteps the non-TTY stdin hang (`codex exec` blocks forever waiting on stdin EOF under Claude Code's Bash tool; feeding the file gives immediate EOF).
@@ -82,9 +83,10 @@ Codex's report is advisory. Verify yourself:
 Problems found → resume the SAME session (Codex keeps its context; cheaper and better than a fresh run). Write the fix list to a temp file (`$P2`), same contract discipline: exact problem, exact file, proof expected.
 
 ```bash
-# resume has no --yolo and no -C: run from the repo dir and spell the long flag,
-# or Codex inherits config.toml's sandbox (possibly read-only) and can't write.
-codex exec resume "$THREAD_ID" --dangerously-bypass-approvals-and-sandbox --json \
+# resume has no -C: run from the repo dir. Spell the full flag set out, or
+# Codex inherits config.toml's sandbox (possibly read-only) and can't write.
+codex exec resume "$THREAD_ID" --dangerously-bypass-approvals-and-sandbox \
+  --model gpt-5.6-sol -c service_tier=fast --json \
   -o /tmp/codex-build.txt - <"$P2" 2>/dev/null >/dev/null
 ```
 

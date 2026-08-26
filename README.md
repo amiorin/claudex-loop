@@ -26,7 +26,7 @@ flowchart LR
     A["🔍 RECON<br>codebase recon or<br>greenfield research"] --> L["📋 Assumptions Ledger<br>you confirm in one batch"]
     L --> B["🎯 INTERROGATE<br>load-bearing questions<br>one at a time"]
     B --> P["PLAN.md locked"]
-    P --> C["⚔️ REVIEW<br>Codex attacks in a<br>read-only sandbox"]
+    P --> C["⚔️ REVIEW<br>Codex attacks<br>the locked plan"]
     C -- REVISE --> R["Claude arbitrates<br>and revises"]
     R -- same session --> C
     C -- APPROVED --> S["✍️ You sign off"]
@@ -44,7 +44,7 @@ flowchart LR
     class P artifact
 ```
 
-**You enter at four points only:** confirming the ledger, answering the interview, signing off the converged plan, and approving the final diff if you build. Codex is read-only throughout review and never touches a file.
+**You enter at four points only:** confirming the ledger, answering the interview, signing off the converged plan, and approving the final diff if you build. Codex runs unsandboxed (your machine is the sandbox) and is instructed to review without writing a file.
 
 ## The four phases
 
@@ -52,8 +52,8 @@ flowchart LR
 |---|---|---|
 | **🔍 0 — RECON** | Claude scouts *before* asking you anything — explores the codebase and living docs, or on greenfield researches prior art, stacks, and known pitfalls (research depth is a gate **you** control, up to a multi-agent deep-research workflow) | Opens with an **Assumptions Ledger**: everything already resolved, batch-confirmed in one reply. The interview never wastes questions the code or research already answered |
 | **🎯 1 — INTERROGATE** | A visible **decision map** splits open decisions into load-bearing (asked one at a time) and cosmetic (batched, veto-by-exception) | Every question must justify its existence: *why it matters*, a committed *recommendation*, and *what breaks if we guess wrong*. Escape hatch: "accept all remaining recommendations" |
-| **⚔️ 2 — REVIEW** | Codex reviews `PLAN.md` in a read-only sandbox → `VERDICT: APPROVED` or `REVISE` with concrete flaws. Claude arbitrates (rejects bad critiques *with logged reasons*), revises, and resumes the **same Codex session** | The reviewer remembers its prior findings and attacks its own accepted fixes. Bounded by `MAX_ROUNDS` — a flagged deadlock beats a fake "approved" |
-| **🔨 3 — BUILD** *(optional)* | You pick the builder. **Codex builds** (`codex-build`, full write access) → Claude reads the entire diff like a contributor PR and runs the proof test itself. **Claude builds** → a *fresh* read-only Codex session cross-inspects the finished diff against the plan — on by default, findings arbitrated and logged | The final code is always graded by the rival model, whichever one wrote it. Skipping the inspection requires an explicit, logged opt-out |
+| **⚔️ 2 — REVIEW** | Codex reviews `PLAN.md` → `VERDICT: APPROVED` or `REVISE` with concrete flaws. Claude arbitrates (rejects bad critiques *with logged reasons*), revises, and resumes the **same Codex session** | The reviewer remembers its prior findings and attacks its own accepted fixes. Bounded by `MAX_ROUNDS` — a flagged deadlock beats a fake "approved" |
+| **🔨 3 — BUILD** *(optional)* | You pick the builder. **Codex builds** (`codex-build`, full write access) → Claude reads the entire diff like a contributor PR and runs the proof test itself. **Claude builds** → a *fresh* Codex session cross-inspects the finished diff against the plan — on by default, findings arbitrated and logged | The final code is always graded by the rival model, whichever one wrote it. Skipping the inspection requires an explicit, logged opt-out |
 
 **The invariant across all four:** *whoever made the thing never checks the thing.* Plan by Claude → attacked by Codex. Code by Codex → reviewed by Claude. Code by Claude → inspected by Codex. No one grades their own work, in any path.
 
@@ -102,7 +102,7 @@ Invoke as `/claudex-loop`, `/codex-review`, `/codex-build`. Update by `git pull`
 
 - **Codex CLI ≥ 0.130** — `npm install -g @openai/codex@latest`
 - **Authenticated** — `codex login` once (any ChatGPT account: Free/Plus/Pro/Max)
-- **Don't pin a model** — ChatGPT-account auth rejects `gpt-5.x-codex` variants; the skills use your config default and echo the active model at kickoff so you can veto before a round burns
+- **Model is pinned** — the skills pass `--model gpt-5.6-sol -c service_tier=fast` on every call and echo it at kickoff so you can veto before a round burns. (ChatGPT-account auth still rejects `gpt-5.x-codex` variants; `gpt-5.6-sol` works — verified on codex-cli 0.147.0.)
 
 ## Tunables
 
@@ -120,9 +120,9 @@ Pass e.g. `rounds=3` when invoking to override.
 
 ## Safety
 
-**Review (Phases 0–2):** Codex runs **read-only every round** — `-s read-only` on the first call, `-c sandbox_mode="read-only"` on every resume (the `resume` subcommand doesn't accept `-s`, and without forcing read-only it would inherit your `config.toml` sandbox default, which may be `danger-full-access`). The skills handle this for you. No code is written until you approve the final plan.
+**Review (Phases 0–2):** Codex runs **unsandboxed every round** — `--dangerously-bypass-approvals-and-sandbox` on the first call and on every resume (`resume` doesn't accept `-s`, and without explicit flags it inherits your `config.toml` defaults). The premise is that the host machine *is* the sandbox. Be clear-eyed about the trade: the reviewer's "don't write" discipline is a prompt instruction, not a kernel guarantee — the skills keep `Do NOT modify any files` in every review prompt, and a `git status` check settles any doubt. No code is written until you approve the final plan.
 
-**`codex-build` (Phase 3)** deliberately inverts this: Codex gets full write access — which is exactly why the skill gates it hard. Clean git tree before launch, Claude reads every line of the diff and runs the proof itself, fix rounds bounded, commits human-gated and Claude-authored. Resume calls need the long flag `--dangerously-bypass-approvals-and-sandbox` (resume has no `--yolo`) — and always resume by explicit `thread_id`, never `--last`.
+**`codex-build` (Phase 3)** deliberately inverts this: Codex gets full write access — which is exactly why the skill gates it hard. Clean git tree before launch, Claude reads every line of the diff and runs the proof itself, fix rounds bounded, commits human-gated and Claude-authored. Resume calls need the long flag spelled out (resume has no `--yolo`) — and always resume by explicit `thread_id`, never `--last`.
 
 ## Credits
 
