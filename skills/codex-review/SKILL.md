@@ -13,8 +13,8 @@ This is a **deliberate, high-stakes tool** — reach for it on auth, data models
 
 - Codex CLI installed and recent: `codex --version` (need ≥ 0.130; the default `gpt-5.5` model errors on older CLIs).
 - Codex authenticated: a prior `codex login` (ChatGPT account is fine). If a run returns an auth/model error, surface it to the user — do not silently retry.
-- Model is pinned on every call: `--model gpt-5.6-sol -c service_tier=fast`. (`gpt-5.x-codex` variants still fail on ChatGPT-account auth; `gpt-5.6-sol` does not — verified end-to-end, exec + resume, on codex-cli 0.147.0, 2026-08-26.)
-- **Echo the active model before Round 1** so the user can confirm — `gpt-5.6-sol (service_tier=fast, pinned by the skill)` plus the CLI version; state it with the resolved tunables. If the user objects, stop before burning a round.
+- Model is pinned on every call: `--model gpt-6-astra -c service_tier=fast`. (`gpt-5.x-codex` variants still fail on ChatGPT-account auth; `gpt-6-astra` does not — verified end-to-end, exec + resume, on codex-cli 0.153.4, 2026-09-08.)
+- **Echo the active model before Round 1** so the user can confirm — `gpt-6-astra (service_tier=fast, pinned by the skill)` plus the CLI version; state it with the resolved tunables. If the user objects, stop before burning a round.
 - **Codex runs unsandboxed** — `--dangerously-bypass-approvals-and-sandbox` on both `codex exec` and `codex exec resume`, on the premise that the host machine is itself the sandbox. `resume` rejects `-s` ("unexpected argument") but accepts the bypass and `--model` flags, so spell the full set out every round instead of letting it inherit `config.toml`. Consequence worth naming: the read-only discipline is a *prompt* constraint, not a kernel one — keep `Do NOT modify any files` in the review prompt, and if a round looks suspicious, check `git status` before trusting the verdict.
 
 ## Tunable variables (read from skill args, else default)
@@ -76,7 +76,7 @@ Maintain `ROUND` (start 1) and `THREAD_ID` (empty until round 1 returns).
 **Round 1** (creates the session — capture `thread_id`):
 
 ```bash
-codex exec --dangerously-bypass-approvals-and-sandbox --model gpt-5.6-sol -c service_tier=fast \
+codex exec --dangerously-bypass-approvals-and-sandbox --model gpt-6-astra -c service_tier=fast \
   --json \
   -o /tmp/codex-verdict.txt \
   "$(cat REVIEW_PROMPT)" \
@@ -96,7 +96,7 @@ Parse `thread_id` from the `{"type":"thread.started","thread_id":"..."}` line �
 # NOTE: resume rejects -s but takes the same bypass/model flags as exec.
 # Spell them out every round — otherwise Codex inherits config.toml.
 codex exec resume "$THREAD_ID" --dangerously-bypass-approvals-and-sandbox \
-  --model gpt-5.6-sol -c service_tier=fast --json \
+  --model gpt-6-astra -c service_tier=fast --json \
   -o /tmp/codex-verdict.txt \
   "I revised the plan. Re-review PLAN.md. Same rules. End with VERDICT: APPROVED or VERDICT: REVISE." \
   < /dev/null 2>/dev/null >/dev/null
@@ -119,7 +119,7 @@ Both `codex exec` and `codex exec resume` support `--json` (stream → parse `th
 
 ## Hard rules
 
-- Same flag set EVERY round — `--dangerously-bypass-approvals-and-sandbox --model gpt-5.6-sol -c service_tier=fast`, first call and every resume (resume has no `-s`). Codex is unsandboxed, so "don't write" lives in the review prompt: keep it there. This skill still never *asks* Codex to implement — that's `/codex-build`.
+- Same flag set EVERY round — `--dangerously-bypass-approvals-and-sandbox --model gpt-6-astra -c service_tier=fast`, first call and every resume (resume has no `-s`). Codex is unsandboxed, so "don't write" lives in the review prompt: keep it there. This skill still never *asks* Codex to implement — that's `/codex-build`.
 - The loop ALWAYS terminates at `MAX_ROUNDS`. No unbounded recursion.
 - Claude is the final arbiter on every REVISE — incorporate good critiques, reject bad ones *with a reason logged*. Don't cave to Codex on everything (that defeats the cross-model check) and don't ignore it (that defeats the point).
 - Code only after human gate #2.

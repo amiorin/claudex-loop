@@ -102,7 +102,7 @@ Invoke as `/claudex-loop`, `/codex-review`, `/codex-build`. Update by `git pull`
 
 - **Codex CLI ≥ 0.130** — `npm install -g @openai/codex@latest`
 - **Authenticated** — `codex login` once (any ChatGPT account: Free/Plus/Pro/Max)
-- **Model is pinned** — the skills pass `--model gpt-5.6-sol -c service_tier=fast` on every call and echo it at kickoff so you can veto before a round burns. (ChatGPT-account auth still rejects `gpt-5.x-codex` variants; `gpt-5.6-sol` works — verified on codex-cli 0.147.0.)
+- **Model is pinned** — the skills pass `--model gpt-6-astra -c service_tier=fast` on every call and echo it at kickoff so you can veto before a round burns. (ChatGPT-account auth still rejects `gpt-5.x-codex` variants; `gpt-6-astra` works — verified on codex-cli 0.153.4.)
 
 ## Tunables
 

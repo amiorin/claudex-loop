@@ -160,8 +160,8 @@ Hand the locked plan to Codex for adversarial review. Mechanics verified end-to-
 ### Prerequisites (verify once, fast)
 - `codex --version` ≥ 0.130 (older CLIs error on the default `gpt-5.5` model).
 - Codex authenticated (prior `codex login`; ChatGPT account is fine). On auth/model error, surface it — don't silently retry.
-- Model is pinned on every call: `--model gpt-5.6-sol -c service_tier=fast`. (`gpt-5.x-codex` variants still 400 on ChatGPT-account auth; `gpt-5.6-sol` does not — verified end-to-end, exec + resume, on codex-cli 0.147.0, 2026-08-26.)
-- **Echo the active model before Round 1** so the user can confirm, alongside the resolved tunables, e.g. `Reviewer model: gpt-5.6-sol (service_tier=fast, pinned by the skill) — codex-cli 0.147.0`. If the user objects, stop and let them override before burning a review round.
+- Model is pinned on every call: `--model gpt-6-astra -c service_tier=fast`. (`gpt-5.x-codex` variants still 400 on ChatGPT-account auth; `gpt-6-astra` does not — verified end-to-end, exec + resume, on codex-cli 0.153.4, 2026-09-08.)
+- **Echo the active model before Round 1** so the user can confirm, alongside the resolved tunables, e.g. `Reviewer model: gpt-6-astra (service_tier=fast, pinned by the skill) — codex-cli 0.153.4`. If the user objects, stop and let them override before burning a review round.
 
 ### Tunables (read from args, else default)
 | Var | Default | Meaning |
@@ -182,7 +182,7 @@ If invoked with e.g. `rounds=3`, use that for `MAX_ROUNDS`. Echo resolved values
 
 ### Round 1 — fresh session (capture `thread_id`)
 ```bash
-codex exec --dangerously-bypass-approvals-and-sandbox --model gpt-5.6-sol -c service_tier=fast \
+codex exec --dangerously-bypass-approvals-and-sandbox --model gpt-6-astra -c service_tier=fast \
   --json -o /tmp/codex-verdict.txt "$(cat REVIEW_PROMPT)" \
   < /dev/null 2>/dev/null | grep '"type":"thread.started"'
 ```
@@ -194,7 +194,7 @@ Parse `thread_id` from the `{"type":"thread.started","thread_id":"..."}` line �
 # full set out every round — otherwise Codex silently inherits config.toml's
 # sandbox and model instead of the ones this skill pins.
 codex exec resume "$THREAD_ID" --dangerously-bypass-approvals-and-sandbox \
-  --model gpt-5.6-sol -c service_tier=fast --json \
+  --model gpt-6-astra -c service_tier=fast --json \
   -o /tmp/codex-verdict.txt \
   "I revised the plan. Re-review PLAN.md — check whether your prior findings are addressed and flag anything new. End with VERDICT: APPROVED or VERDICT: REVISE." \
   < /dev/null 2>/dev/null >/dev/null
@@ -233,7 +233,7 @@ Opt-out: `inspect=off` at invocation or the user declining at Resolution. Skippi
 ## Hard rules
 - Phases run in order: 0 → 1 → 2. Don't write `PLAN.md` until the interrogation has actually resolved the decision map with the user (or they invoked the escape hatch).
 - The assumptions ledger is presented ONCE as a batch — never drip assumptions as individual questions.
-- Same flag set EVERY round — `--dangerously-bypass-approvals-and-sandbox --model gpt-5.6-sol -c service_tier=fast`, first call and every resume (resume has no `-s`). Codex is unsandboxed, so "don't write" is a *prompt* constraint now: keep `Do NOT modify any files` in the review prompt, and check `git status` if a round looks off.
+- Same flag set EVERY round — `--dangerously-bypass-approvals-and-sandbox --model gpt-6-astra -c service_tier=fast`, first call and every resume (resume has no `-s`). Codex is unsandboxed, so "don't write" is a *prompt* constraint now: keep `Do NOT modify any files` in the review prompt, and check `git status` if a round looks off.
 - The loop ALWAYS terminates at `MAX_ROUNDS`.
 - Claude is final arbiter on every REVISE — incorporate good critiques, reject bad ones *with a logged reason*. Don't cave to everything (defeats the cross-model check) and don't ignore it (defeats the point).
 - Code only after the user's final sign-off.

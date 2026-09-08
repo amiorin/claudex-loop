@@ -15,8 +15,8 @@ Adapted from Peter Steinberger's `codex-first` pattern (agent-scripts), rebuilt 
 
 - `codex --version` ≥ 0.130 (older CLIs error on the default `gpt-5.5` model).
 - Codex authenticated (prior `codex login`; ChatGPT account is fine). On auth/model error, surface it — don't silently retry.
-- Model is pinned on every call: `--model gpt-5.6-sol -c service_tier=fast`. (`gpt-5.x-codex` variants still 400 on ChatGPT-account auth; `gpt-5.6-sol` does not — verified end-to-end, exec + resume, on codex-cli 0.147.0, 2026-08-26.) Leave other model config (e.g. `model_reasoning_effort`) to `~/.codex/config.toml` unless the user asks.
-- **Echo the active model at kickoff** so the user can confirm — `gpt-5.6-sol (service_tier=fast, pinned by the skill)` plus the CLI version; state it with the resolved tunables. If the user objects, stop before launching the build.
+- Model is pinned on every call: `--model gpt-6-astra -c service_tier=fast`. (`gpt-5.x-codex` variants still 400 on ChatGPT-account auth; `gpt-6-astra` does not — verified end-to-end, exec + resume, on codex-cli 0.153.4, 2026-09-08.) Leave other model config (e.g. `model_reasoning_effort`) to `~/.codex/config.toml` unless the user asks.
+- **Echo the active model at kickoff** so the user can confirm — `gpt-6-astra (service_tier=fast, pinned by the skill)` plus the CLI version; state it with the resolved tunables. If the user objects, stop before launching the build.
 - **Codex has a native image-generation tool** in `codex exec` sessions (ChatGPT-account backed, no API key; verified 2026-07-08 — it saved a generated PNG to disk headless). Specs may therefore include "generate these image assets yourself" steps: name exact file paths, dimensions, and style in the prompt contract.
 - Run from the target repo's root (both `exec` and `resume` then need no `-C`; `resume` doesn't support `-C` anyway).
 
@@ -60,7 +60,7 @@ EOF
 ## Step 2 — Launch Codex (fresh session, capture `thread_id`)
 
 ```bash
-codex exec --dangerously-bypass-approvals-and-sandbox --model gpt-5.6-sol -c service_tier=fast \
+codex exec --dangerously-bypass-approvals-and-sandbox --model gpt-6-astra -c service_tier=fast \
   --json -o /tmp/codex-build.txt - <"$P" 2>/dev/null | grep '"type":"thread.started"'
 ```
 
@@ -86,7 +86,7 @@ Problems found → resume the SAME session (Codex keeps its context; cheaper and
 # resume has no -C: run from the repo dir. Spell the full flag set out, or
 # Codex inherits config.toml's sandbox (possibly read-only) and can't write.
 codex exec resume "$THREAD_ID" --dangerously-bypass-approvals-and-sandbox \
-  --model gpt-5.6-sol -c service_tier=fast --json \
+  --model gpt-6-astra -c service_tier=fast --json \
   -o /tmp/codex-build.txt - <"$P2" 2>/dev/null >/dev/null
 ```
 
